@@ -18,9 +18,10 @@ const ChatScreen = ({ route, navigation }) => {
   const [inputMessage, setInputMessage] = useState("");
   const ws = useRef(null);
   const shouldReconnect = useRef(true);
-  const joinMessageReceived = useRef(false); // Track if our join message is already added
 
-  // Fetch the last 10 messages for the room using HTTPS
+  // -----------------------
+  // 1. Fetch last 10 messages
+  // -----------------------
   const fetchMessages = async () => {
     try {
       const response = await fetch(
@@ -31,14 +32,21 @@ const ChatScreen = ({ route, navigation }) => {
         return;
       }
       const data = await response.json();
-      setMessages(data.slice(-10));
+
+      // data might come in descending order (newest first).
+      // Reverse so oldest is at index 0 and newest at the end:
+      const lastTenAscending = data.slice(-10).reverse();
+
+      setMessages(lastTenAscending);
     } catch (error) {
       console.error("Fetch messages error:", error);
       Alert.alert("Error", "Failed to connect to the server.");
     }
   };
 
-  // Function to create and connect the WebSocket
+  // -----------------------
+  // 2. WebSocket connection logic
+  // -----------------------
   const connectWebSocket = useCallback(() => {
     const wsUrl = `${WS_BASE_URL}/ws/${room.id}/${username}`;
     console.log("Connecting to WebSocket URL:", wsUrl);
@@ -46,7 +54,7 @@ const ChatScreen = ({ route, navigation }) => {
 
     ws.current.onopen = () => {
       console.log("WebSocket connection opened");
-      // Automatically send join message on open
+      // Automatically send a join message on open
       const joinMsg = {
         event: "join",
         content: `${username} has joined the chat`,
@@ -59,14 +67,18 @@ const ChatScreen = ({ route, navigation }) => {
       try {
         const messageData = JSON.parse(e.data);
         console.log("Received message:", messageData);
-        // Ignore join events entirely
+
+        // Ignore "join" events
         if (messageData.event === "join") {
           return;
         }
+
         // If message is nested under "message", extract it
         if (messageData.event === "message" && messageData.message) {
+          // Appending new messages at the end of the array
           setMessages((prev) => [...prev, messageData.message]);
         } else {
+          // Or if it's just an object with { event, username, content }
           setMessages((prev) => [...prev, messageData]);
         }
       } catch (err) {
@@ -89,6 +101,9 @@ const ChatScreen = ({ route, navigation }) => {
     };
   }, [room.id, username]);
 
+  // -----------------------
+  // 3. Set up on mount
+  // -----------------------
   useEffect(() => {
     shouldReconnect.current = true;
     fetchMessages();
@@ -118,6 +133,9 @@ const ChatScreen = ({ route, navigation }) => {
     };
   }, [connectWebSocket, navigation]);
 
+  // -----------------------
+  // 4. Send message
+  // -----------------------
   const handleSendMessage = () => {
     if (inputMessage.trim() === "") return;
     const messagePayload = {
@@ -133,19 +151,27 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
+  // -----------------------
+  // 5. Leave group
+  // -----------------------
   const handleLeaveGroup = () => {
     const leaveMsg = {
       event: "leave",
       content: `${username} has left the room`,
       username,
     };
-    ws.current.send(JSON.stringify(leaveMsg));
-    ws.current.close();
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify(leaveMsg));
+    }
+    ws.current?.close();
     navigation.navigate("RoomsList", { username, userId });
   };
 
+  // -----------------------
+  // 6. Logout
+  // -----------------------
   const handleLogout = () => {
-    if (ws.current) {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       const leaveMsg = {
         event: "leave",
         content: `${username} has left the room`,
@@ -160,6 +186,9 @@ const ChatScreen = ({ route, navigation }) => {
     });
   };
 
+  // -----------------------
+  // 7. Render each message
+  // -----------------------
   const renderMessageItem = ({ item }) => {
     const isOwnMessage = item.username === username;
     return (
@@ -177,6 +206,9 @@ const ChatScreen = ({ route, navigation }) => {
     );
   };
 
+  // -----------------------
+  // 8. Main component render
+  // -----------------------
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.roomTitle}>Room: {room.name}</Text>
@@ -205,10 +237,13 @@ const ChatScreen = ({ route, navigation }) => {
 
 export default ChatScreen;
 
+// ---------------------------------------------------
+// 9. Some basic styles
+// ---------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f2f5", // Light grey background similar to Facebook Messenger
+    backgroundColor: "#f0f2f5", // Light grey background (FB Messenger style)
   },
   roomTitle: {
     fontSize: 22,
